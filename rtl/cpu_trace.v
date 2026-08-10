@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 module cpu_trace #(
-	parameter CAPTURE_ENABLE = 1'b1,
-	parameter [23:0] FREEZE_LEN = 24'd2000000
+	parameter CAPTURE_ENABLE = 1'b1
 )(
 	input             clk,
 	input             reset,
@@ -45,25 +44,24 @@ always @(posedge clk)
 	else if (cpu_clkena) is_l2_d <= is_l2;
 
 reg [23:0] stop_len;
-reg        frozen;
-wire       freeze_now = cpu_clkena & cpu_stopped & ~frozen & (stop_len == FREEZE_LEN);
 always @(posedge clk) begin
 	if (reset) begin
 		stop_len <= 24'd0;
-		frozen   <= 1'b0;
 	end else if (cpu_clkena) begin
 		if (cpu_stopped) begin
 			if (stop_len != 24'hFFFFFF) stop_len <= stop_len + 1'b1;
-			if (stop_len == FREEZE_LEN) frozen <= 1'b1;
 		end else begin
 			stop_len <= 24'd0;
-			frozen   <= 1'b0;
 		end
 	end
 end
 
+reg cs_d;
+always @(posedge clk) cs_d <= uio_cs_trace;
+wire cs_rise = uio_cs_trace & ~cs_d;
+
 wire fetch_ev = cpu_clkena & ~skipFetch & (cpustate == 2'b00);
-wire cap_en   = CAPTURE_ENABLE & ~frozen & (fetch_ev | stop_enter);
+wire cap_en   = CAPTURE_ENABLE & ~uio_cs_trace & (fetch_ev | stop_enter);
 
 wire [3:0] ev_type = stop_enter ? 4'h1 : 4'h5;
 
@@ -90,7 +88,7 @@ always @(posedge clk) begin
 			ring[wr_ptr] <= entry;
 			wr_ptr       <= wr_ptr + 1'b1;
 		end
-		if (freeze_now) begin
+		if (cs_rise) begin
 			rd_ptr <= wr_ptr;
 			avail  <= 10'd512;
 		end
@@ -101,27 +99,30 @@ always @(posedge clk) begin
 	end
 end
 
+reg [127:0] rd_data;
+always @(posedge clk) rd_data <= ring[rd_ptr];
+
 always @(*) begin
 	if (empty) begin
 		uio_dout = 8'h00;
 	end else begin
 		case (byte_idx)
-			4'h0: uio_dout = ring[rd_ptr][  7:  0];
-			4'h1: uio_dout = ring[rd_ptr][ 15:  8];
-			4'h2: uio_dout = ring[rd_ptr][ 23: 16];
-			4'h3: uio_dout = ring[rd_ptr][ 31: 24];
-			4'h4: uio_dout = ring[rd_ptr][ 39: 32];
-			4'h5: uio_dout = ring[rd_ptr][ 47: 40];
-			4'h6: uio_dout = ring[rd_ptr][ 55: 48];
-			4'h7: uio_dout = ring[rd_ptr][ 63: 56];
-			4'h8: uio_dout = ring[rd_ptr][ 71: 64];
-			4'h9: uio_dout = ring[rd_ptr][ 79: 72];
-			4'hA: uio_dout = ring[rd_ptr][ 87: 80];
-			4'hB: uio_dout = ring[rd_ptr][ 95: 88];
-			4'hC: uio_dout = ring[rd_ptr][103: 96];
-			4'hD: uio_dout = ring[rd_ptr][111:104];
-			4'hE: uio_dout = ring[rd_ptr][119:112];
-			4'hF: uio_dout = ring[rd_ptr][127:120];
+			4'h0: uio_dout = rd_data[  7:  0];
+			4'h1: uio_dout = rd_data[ 15:  8];
+			4'h2: uio_dout = rd_data[ 23: 16];
+			4'h3: uio_dout = rd_data[ 31: 24];
+			4'h4: uio_dout = rd_data[ 39: 32];
+			4'h5: uio_dout = rd_data[ 47: 40];
+			4'h6: uio_dout = rd_data[ 55: 48];
+			4'h7: uio_dout = rd_data[ 63: 56];
+			4'h8: uio_dout = rd_data[ 71: 64];
+			4'h9: uio_dout = rd_data[ 79: 72];
+			4'hA: uio_dout = rd_data[ 87: 80];
+			4'hB: uio_dout = rd_data[ 95: 88];
+			4'hC: uio_dout = rd_data[103: 96];
+			4'hD: uio_dout = rd_data[111:104];
+			4'hE: uio_dout = rd_data[119:112];
+			4'hF: uio_dout = rd_data[127:120];
 		endcase
 	end
 end
