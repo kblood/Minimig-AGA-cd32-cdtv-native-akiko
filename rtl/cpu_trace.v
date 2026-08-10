@@ -8,12 +8,13 @@ module cpu_trace #(
 
 	input             cpu_clkena,
 	input             cpu_stopped,
+	input             cap_ev,
 	input      [31:0] cpu_addr,
+	input      [15:0] cpu_data,
 	input       [1:0] cpustate,
-	input             skipFetch,
 	input             supervisor,
 	input       [2:0] chip_ipl,
-	input             int2_pending,
+	input             tg68k_sel,
 
 	input             uio_cs_trace,
 	input             uio_rd,
@@ -35,7 +36,6 @@ always @(posedge clk)
 	if (reset)           cpu_stopped_d <= 1'b0;
 	else if (cpu_clkena) cpu_stopped_d <= cpu_stopped;
 wire stop_enter = cpu_clkena &  cpu_stopped & ~cpu_stopped_d;
-wire stop_exit  = cpu_clkena & ~cpu_stopped &  cpu_stopped_d;
 
 reg is_l2_d;
 wire is_l2 = (chip_ipl == 3'b101);
@@ -60,17 +60,17 @@ reg cs_d;
 always @(posedge clk) cs_d <= uio_cs_trace;
 wire cs_rise = uio_cs_trace & ~cs_d;
 
-wire fetch_ev = cpu_clkena & ~skipFetch & (cpustate == 2'b00);
-wire cap_en   = CAPTURE_ENABLE & ~uio_cs_trace & (fetch_ev | stop_enter);
+wire cap_en = CAPTURE_ENABLE & ~uio_cs_trace & (cap_ev | stop_enter);
 
 wire [3:0] ev_type = stop_enter ? 4'h1 : 4'h5;
 
 wire [7:0] byte8 = {ev_type, cpu_stopped, supervisor, cpustate};
-wire [7:0] byte9 = {chip_ipl, int2_pending, skipFetch, 2'b00, is_l2_d};
+wire [7:0] byte9 = {chip_ipl, tg68k_sel, 3'b000, is_l2_d};
 wire [15:0] byte10 = stop_len[23:8];
 
 wire [127:0] entry = {
-	32'd0,
+	16'd0,
+	cpu_data,
 	byte10,
 	byte9,
 	byte8,

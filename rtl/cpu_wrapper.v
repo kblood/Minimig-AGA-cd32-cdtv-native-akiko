@@ -250,17 +250,42 @@ cpu_inst_p
 wire        cpu_stopped_p;
 wire        cpu_skipfetch_p;
 
+wire tg68k_sel = |cpucfg[1:0];
+
+wire fetch_ev_p = clkena_p_throttled & ~cpu_skipfetch_p & (cpustate_p == 2'b00);
+
+reg as_o_d;
+always @(posedge clk) as_o_d <= as_o;
+wire as_rise = as_o & ~as_o_d;
+
+reg [31:0] fx_addr_q;
+reg [15:0] fx_data_q;
+reg  [2:0] fx_fc_q;
+always @(posedge clk) if (~as_o) begin
+	fx_addr_q <= {8'd0, cpu_addr_o, 1'b0};
+	fx_data_q <= cpu_din;
+	fx_fc_q   <= fc_o;
+end
+wire fetch_ev_o = as_rise & fx_fc_q[1] & ~fx_fc_q[0];
+
+wire        trace_ev   = tg68k_sel ? fetch_ev_p  : fetch_ev_o;
+wire [31:0] trace_addr = tg68k_sel ? cpu_addr_p  : fx_addr_q;
+wire [15:0] trace_data = tg68k_sel ? cpu_din     : fx_data_q;
+wire  [1:0] trace_st   = tg68k_sel ? cpustate_p  : 2'b00;
+wire        trace_sv   = tg68k_sel ? 1'b0        : fx_fc_q[2];
+
 cpu_trace #(.CAPTURE_ENABLE(0)) u_cpu_trace(
 	.clk          (clk               ),
 	.reset        (~reset            ),
 	.cpu_clkena   (clkena_p_throttled),
-	.cpu_stopped  (cpu_stopped_p     ),
-	.cpu_addr     (cpu_addr_p        ),
-	.cpustate     (cpustate_p        ),
-	.skipFetch    (cpu_skipfetch_p   ),
-	.supervisor   (1'b0              ),
+	.cpu_stopped  (tg68k_sel & cpu_stopped_p),
+	.cap_ev       (trace_ev          ),
+	.cpu_addr     (trace_addr        ),
+	.cpu_data     (trace_data        ),
+	.cpustate     (trace_st          ),
+	.supervisor   (trace_sv          ),
 	.chip_ipl     (chip_ipl          ),
-	.int2_pending (1'b0              ),
+	.tg68k_sel    (tg68k_sel         ),
 	.uio_cs_trace (cpu_trace_cs      ),
 	.uio_rd       (cpu_trace_rd      ),
 	.uio_dout     (cpu_trace_dout    )
