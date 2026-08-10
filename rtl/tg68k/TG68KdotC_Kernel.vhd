@@ -135,6 +135,7 @@ entity TG68KdotC_Kernel is
 		FC							: out std_logic_vector(2 downto 0);
 		clr_berr					: out std_logic;
 -- for debug
+		cpu_stopped				: out std_logic;
 		skipFetch				: out std_logic;
 		regin_out				: out std_logic_vector(31 downto 0);
 		CACR_out					: out std_logic_vector( 3 downto 0);
@@ -443,6 +444,7 @@ ALU: TG68K_ALU
 
 	nWr <= '0' WHEN state="11" ELSE '1';
 	busstate <= state;
+	cpu_stopped <= '1' when stop='1' else '0';
 	nResetOut <= '0' WHEN exec(opcRESET)='1' ELSE '1';
 	
 	-- does shift for byte access. note active low me

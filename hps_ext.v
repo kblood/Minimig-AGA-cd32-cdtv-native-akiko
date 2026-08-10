@@ -82,6 +82,10 @@ module hps_ext
 	output reg        cdtv_cs_stch,
 	output reg        cdtv_cs_nvr,
 	output reg        cdtv_cs_card,
+
+	input       [7:0] cpu_trace_din,
+	output reg        cpu_trace_rd,
+	output reg        cpu_cs_trace,
 	input             cdtv_req,
 	input             cdtv_nvr_dirty,
 	input             cdtv_card_dirty
@@ -120,6 +124,7 @@ always@(posedge clk_sys) begin : main_proc
 	cdda_wr <= 0;
 	{akiko_rd, akiko_wr} <= 0;
 	{cdtv_rd, cdtv_wr} <= 0;
+	cpu_trace_rd <= 0;
 	if((ide_rd | ide_wr) & ~&ide_addr[3:0]) ide_addr <= ide_addr + 1'd1;
 
 	if(~io_uio) begin
@@ -137,6 +142,7 @@ always@(posedge clk_sys) begin : main_proc
 		cdtv_cs_stch <= 0;
 		cdtv_cs_nvr <= 0;
 		cdtv_cs_card <= 0;
+		cpu_cs_trace <= 0;
 		if(cmd == 'h2D) sset <= 1;
 	end
 	else if(io_strobe) begin
@@ -161,6 +167,7 @@ always@(posedge clk_sys) begin : main_proc
 			cdtv_cs_stch     <= (io_din[15:9] == 7'b1111100) && !io_din[7] &&  io_din[6];
 			cdtv_cs_nvr      <= (io_din[15:9] == 7'b1111100) &&  io_din[7] && !io_din[6];
 			cdtv_cs_card     <= (io_din[15:9] == 7'b1111100) &&  io_din[7] &&  io_din[6];
+			cpu_cs_trace     <= (io_din[15:9] == 7'b1111111);
 		end
 
 		if(byte_cnt == 0) begin
@@ -249,6 +256,10 @@ always@(posedge clk_sys) begin : main_proc
 					if(byte_cnt >= 3 && (cdtv_cs | cdtv_cs_stch | cdtv_cs_nvr | cdtv_cs_card)) begin
 						io_dout <= cdtv_din;
 						cdtv_rd <= 1;
+					end
+					if(byte_cnt >= 3 && cpu_cs_trace) begin
+						io_dout      <= {8'h00, cpu_trace_din};
+						cpu_trace_rd <= 1;
 					end
 				end
 			endcase

@@ -88,7 +88,11 @@ module cpu_wrapper
 	output reg  [3:0] z3ram_base1,
 	output reg        z3ram_ena1,
 
-	output            dcache_sw_en
+	output            dcache_sw_en,
+
+	input             cpu_trace_cs,
+	input             cpu_trace_rd,
+	output      [7:0] cpu_trace_dout
 );
 
 wire dcache_sw_en_p;
@@ -238,7 +242,28 @@ cpu_inst_p
   .busstate(cpustate_p),		// 0: fetch code, 1: no memaccess, 2: read data, 3: write data
   .cacr_out(cacr_p),
   .d_cache_out(dcache_sw_en_p),
-  .vbr_out(vbr_p)
+  .vbr_out(vbr_p),
+  .skipFetch(cpu_skipfetch_p),
+  .cpu_stopped(cpu_stopped_p)
+);
+
+wire        cpu_stopped_p;
+wire        cpu_skipfetch_p;
+
+cpu_trace #(.CAPTURE_ENABLE(1)) u_cpu_trace(
+	.clk          (clk               ),
+	.reset        (~reset            ),
+	.cpu_clkena   (clkena_p_throttled),
+	.cpu_stopped  (cpu_stopped_p     ),
+	.cpu_addr     (cpu_addr_p        ),
+	.cpustate     (cpustate_p        ),
+	.skipFetch    (cpu_skipfetch_p   ),
+	.supervisor   (1'b0              ),
+	.chip_ipl     (chip_ipl          ),
+	.int2_pending (1'b0              ),
+	.uio_cs_trace (cpu_trace_cs      ),
+	.uio_rd       (cpu_trace_rd      ),
+	.uio_dout     (cpu_trace_dout    )
 );
 
 wire [15:0] cpu_dout_o;

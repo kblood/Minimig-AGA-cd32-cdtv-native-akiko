@@ -400,10 +400,17 @@ cpu_wrapper cpu_wrapper
 	.z3ram_ena0   (z3ram_ena0      ),
 	.z3ram_base1  (z3ram_base1     ),
 	.z3ram_ena1   (z3ram_ena1      ),
-	.dcache_sw_en (dcache_sw_en    )
+	.dcache_sw_en (dcache_sw_en    ),
+
+	.cpu_trace_cs   (cpu_cs_trace  ),
+	.cpu_trace_rd   (cpu_trace_rd  ),
+	.cpu_trace_dout (cpu_trace_din )
 );
 
 wire        dcache_sw_en;
+wire        cpu_cs_trace;
+wire        cpu_trace_rd;
+wire  [7:0] cpu_trace_din;
 
 wire        z2ram_ena;
 wire  [4:0] z3ram_base0;
