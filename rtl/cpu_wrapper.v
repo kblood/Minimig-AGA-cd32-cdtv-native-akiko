@@ -250,7 +250,7 @@ cpu_inst_p
 wire        cpu_stopped_p;
 wire        cpu_skipfetch_p;
 
-cpu_trace #(.CAPTURE_ENABLE(1)) u_cpu_trace(
+cpu_trace #(.CAPTURE_ENABLE(0)) u_cpu_trace(
 	.clk          (clk               ),
 	.reset        (~reset            ),
 	.cpu_clkena   (clkena_p_throttled),
