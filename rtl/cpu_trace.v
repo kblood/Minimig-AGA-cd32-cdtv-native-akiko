@@ -2,8 +2,7 @@
 
 module cpu_trace #(
 	parameter CAPTURE_ENABLE = 1'b1,
-	parameter [9:0]  WIN_LEN   = 10'd500,
-	parameter [23:0] HB_RELOAD = 24'd2800000
+	parameter [23:0] FREEZE_LEN = 24'd2000000
 )(
 	input             clk,
 	input             reset,
@@ -25,7 +24,9 @@ module cpu_trace #(
 reg [127:0] ring [0:511];
 reg   [8:0] wr_ptr;
 reg   [8:0] rd_ptr;
-wire        empty = (wr_ptr == rd_ptr);
+reg   [9:0] avail;
+reg   [3:0] byte_idx;
+wire        empty = (avail == 10'd0);
 
 reg  [31:0] tstamp;
 always @(posedge clk) tstamp <= reset ? 32'b0 : tstamp + 1'b1;
@@ -43,55 +44,32 @@ always @(posedge clk)
 	if (reset)           is_l2_d <= 1'b0;
 	else if (cpu_clkena) is_l2_d <= is_l2;
 
-reg       armed;
-reg [9:0] win;
+reg [23:0] stop_len;
+reg        frozen;
+wire       freeze_now = cpu_clkena & cpu_stopped & ~frozen & (stop_len == FREEZE_LEN);
 always @(posedge clk) begin
 	if (reset) begin
-		armed <= 1'b1;
-		win   <= 10'd0;
-	end else begin
-		if (armed & stop_exit) begin
-			armed <= 1'b0;
-			win   <= WIN_LEN;
-		end else if (win != 10'd0) begin
-			if (cpu_clkena) win <= win - 1'b1;
-		end else if (~armed & empty) begin
-			armed <= 1'b1;
-		end
-	end
-end
-
-wire window_ev = (win != 10'd0) & cpu_clkena;
-
-reg [23:0] hb;
-reg        hb_pending;
-wire       heartbeat_ev = hb_pending & cpu_clkena & (win == 10'd0);
-always @(posedge clk) begin
-	if (reset) begin
-		hb         <= HB_RELOAD;
-		hb_pending <= 1'b0;
-	end else begin
-		if (hb == 24'd0) begin
-			hb         <= HB_RELOAD;
-			hb_pending <= 1'b1;
+		stop_len <= 24'd0;
+		frozen   <= 1'b0;
+	end else if (cpu_clkena) begin
+		if (cpu_stopped) begin
+			if (stop_len != 24'hFFFFFF) stop_len <= stop_len + 1'b1;
+			if (stop_len == FREEZE_LEN) frozen <= 1'b1;
 		end else begin
-			hb <= hb - 1'b1;
+			stop_len <= 24'd0;
+			frozen   <= 1'b0;
 		end
-		if (heartbeat_ev) hb_pending <= 1'b0;
 	end
 end
 
-wire [3:0] ev_type =
-	stop_exit    ? 4'h2 :
-	stop_enter   ? 4'h1 :
-	heartbeat_ev ? 4'h4 :
-	window_ev    ? 4'h5 : 4'h0;
+wire fetch_ev = cpu_clkena & ~skipFetch & (cpustate == 2'b00);
+wire cap_en   = CAPTURE_ENABLE & ~frozen & (fetch_ev | stop_enter);
 
-wire cap_en = CAPTURE_ENABLE & (window_ev | heartbeat_ev | stop_enter | (armed & stop_exit));
+wire [3:0] ev_type = stop_enter ? 4'h1 : 4'h5;
 
 wire [7:0] byte8 = {ev_type, cpu_stopped, supervisor, cpustate};
 wire [7:0] byte9 = {chip_ipl, int2_pending, skipFetch, 2'b00, is_l2_d};
-wire [15:0] byte10 = {6'd0, win};
+wire [15:0] byte10 = stop_len[23:8];
 
 wire [127:0] entry = {
 	32'd0,
@@ -105,14 +83,23 @@ wire [127:0] entry = {
 always @(posedge clk) begin
 	if (reset) begin
 		wr_ptr <= 9'b0;
-	end
-	else if (cap_en) begin
-		ring[wr_ptr] <= entry;
-		wr_ptr       <= wr_ptr + 1'b1;
+		rd_ptr <= 9'b0;
+		avail  <= 10'd0;
+	end else begin
+		if (cap_en) begin
+			ring[wr_ptr] <= entry;
+			wr_ptr       <= wr_ptr + 1'b1;
+		end
+		if (freeze_now) begin
+			rd_ptr <= wr_ptr;
+			avail  <= 10'd512;
+		end
+		else if (uio_cs_trace && uio_rd && !empty && (byte_idx == 4'hF)) begin
+			rd_ptr <= rd_ptr + 1'b1;
+			avail  <= avail - 1'b1;
+		end
 	end
 end
-
-reg [3:0] byte_idx;
 
 always @(*) begin
 	if (empty) begin
@@ -142,17 +129,9 @@ end
 always @(posedge clk) begin
 	if (reset) begin
 		byte_idx <= 0;
-		rd_ptr   <= 0;
 	end
 	else if (uio_cs_trace && uio_rd) begin
-		if (!empty) begin
-			if (byte_idx == 4'hF) begin
-				rd_ptr   <= rd_ptr + 1'b1;
-				byte_idx <= 0;
-			end else begin
-				byte_idx <= byte_idx + 1'b1;
-			end
-		end
+		if (!empty) byte_idx <= byte_idx + 1'b1;
 	end
 	else if (!uio_cs_trace) begin
 		byte_idx <= 0;
