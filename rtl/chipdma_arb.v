@@ -13,6 +13,13 @@ module chipdma_arb
 	input             chip_in_dma,
 	input      [15:0] chip_in_wr,
 
+	// prevent-the-steal: CPU-owns-chip-slot intent from minimig
+	// (~dbr & ~_cpu_as & |bank), phase-stable at c_7m_rise. Masks arm_now so the
+	// arbiter never preempts the slot the cacheless CPU is mid-reading in OFF mode
+	// (the shared untagged chipRD steal-race). Strictly more conservative ->
+	// cannot introduce a new collision.
+	input             cpu_chip_slot_req,
+
 	input             akiko_dma_req,
 	input             akiko_dma_we,
 	input      [23:0] akiko_dma_baddr,
@@ -128,7 +135,9 @@ wire        live_we     = arming_is_cdtv ? cdtv_dma_we    : akiko_dma_we;
 wire [23:0] live_baddr  = arming_is_cdtv ? cdtv_dma_baddr : akiko_dma_baddr;
 wire  [7:0] live_wbyte  = arming_is_cdtv ? cdtv_dma_wbyte : akiko_dma_wbyte;
 
-wire arm_now = (state == S_IDLE) & c_7m_rise & minimig_idle & any_req;
+// prevent-the-steal: also block arming when the CPU owns an SRAM-backed chip
+// slot, which minimig_idle's cck-phase strobes miss at this c_7m_rise instant.
+wire arm_now = (state == S_IDLE) & c_7m_rise & minimig_idle & ~cpu_chip_slot_req & any_req;
 
 wire arb_request = arm_now | (state == S_DRIVE);
 

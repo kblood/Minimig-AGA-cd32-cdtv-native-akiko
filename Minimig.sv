@@ -145,6 +145,7 @@ wire        arb_chip_u;
 wire        arb_chip_rw;
 wire        arb_chip_dma;
 wire [15:0] arb_chip_wr;
+wire        cpu_chip_slot_req;  // prevent-the-steal: CPU owns an SRAM chip slot (minimig -> chipdma_arb)
 
 wire [35:0] EXT_BUS;
 hps_ext hps_ext(.*, .ide_req(ide_fast ? ide_f_req : ide_c_req),  .ide_din(ide_fast ? ide_f_readdata : ide_c_readdata));
@@ -467,6 +468,7 @@ sdram_ctrl ram1
 chipdma_arb chipdma_arb
 (
 	.clk             (clk_sys              ),
+	.cpu_chip_slot_req(cpu_chip_slot_req   ),  // prevent-the-steal: do not preempt CPU chip slot
 	.reset           (reset_d              ),
 	.c_7m            (c1                   ),
 
@@ -876,7 +878,8 @@ minimig minimig
 	.a2065_mem_writedata(a2065_mem_writedata),
 	.a2065_mem_byteenable(a2065_mem_byteenable),
 	.a2065_mem_write(a2065_mem_write),
-	.a2065_mem_waitrequest(a2065_mem_waitrequest)
+	.a2065_mem_waitrequest(a2065_mem_waitrequest),
+	.cpu_chip_slot_req(cpu_chip_slot_req)  // prevent-the-steal -> chipdma_arb
 );
 
 // power led control
