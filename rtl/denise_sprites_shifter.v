@@ -20,6 +20,8 @@ module denise_sprites_shifter
   input [48-1:0] chip48,
   input   [15:0] data_in,     // bus data in
   output  [1:0] sprdata,      // serialized sprite data out
+  output  diag_pre_hit,     // DIAG: this load used the pre-write data (round-14 collision fired)
+  output  diag_load_evt,    // DIAG: this sprite loaded its shift register (liveness)
   output  reg attach        // sprite is attached
 );
 
@@ -150,6 +152,11 @@ always @(posedge clk)
   sprdata_r <= {shiftb[63],shifta[63],sprdata_r[7:2]}; // Ugly - are we masking a copper timing problem here?
 
 assign sprdata[1:0] = sprdata_r[1:0]; // {shiftb[63],shifta[63]};
+
+// DIAG (round 15, throwaway): expose the round-14 collision decision so denise
+// can flash the screen border when it fires. Not for upstream.
+assign diag_pre_hit  = load_pre_a | load_pre_b;
+assign diag_load_evt = load;
 //--------------------------------------------------------------------------------------
 
 endmodule

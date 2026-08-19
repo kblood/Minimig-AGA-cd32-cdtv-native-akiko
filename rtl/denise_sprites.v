@@ -38,6 +38,8 @@ module denise_sprites
   input [3:0] osprm,
   input [1:0] spres,
   output   [7:0] nsprite,        // sprite data valid signals
+  output  diag_pre_hit,      // DIAG: any sprite took the round-14 pre-write path
+  output  diag_load_any,     // DIAG: any sprite loaded its shift register (liveness)
   output  reg [7:0] sprdata    // sprite data out
 );
 
@@ -63,6 +65,9 @@ wire    [1:0] sprdat4;      // data sprite 4
 wire    [1:0] sprdat5;      // data sprite 5
 wire    [1:0] sprdat6;      // data sprite 6
 wire    [1:0] sprdat7;      // data sprite 7
+
+wire    [7:0] diag_pre;      // DIAG: per-sprite pre-write-path flag
+wire    [7:0] diag_ld;       // DIAG: per-sprite shift-register load flag
 
 wire    attach0;        // attach sprite 0,1
 wire    attach1;        // attach sprite 0,1
@@ -132,6 +137,8 @@ denise_sprites_shifter sps0
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat0),
+  .diag_pre_hit(diag_pre[0]),
+  .diag_load_evt(diag_ld[0]),
   .attach(attach0)
 );
 
@@ -150,6 +157,8 @@ denise_sprites_shifter sps1
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat1),
+  .diag_pre_hit(diag_pre[1]),
+  .diag_load_evt(diag_ld[1]),
   .attach(attach1)
 );
 
@@ -168,6 +177,8 @@ denise_sprites_shifter sps2
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat2),
+  .diag_pre_hit(diag_pre[2]),
+  .diag_load_evt(diag_ld[2]),
   .attach(attach2)
 );
 
@@ -186,6 +197,8 @@ denise_sprites_shifter sps3
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat3),
+  .diag_pre_hit(diag_pre[3]),
+  .diag_load_evt(diag_ld[3]),
   .attach(attach3)
 );
 
@@ -204,6 +217,8 @@ denise_sprites_shifter sps4
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat4),
+  .diag_pre_hit(diag_pre[4]),
+  .diag_load_evt(diag_ld[4]),
   .attach(attach4)
 );
 
@@ -222,6 +237,8 @@ denise_sprites_shifter sps5
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat5),
+  .diag_pre_hit(diag_pre[5]),
+  .diag_load_evt(diag_ld[5]),
   .attach(attach5)
 );
 
@@ -240,6 +257,8 @@ denise_sprites_shifter sps6
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat6),
+  .diag_pre_hit(diag_pre[6]),
+  .diag_load_evt(diag_ld[6]),
   .attach(attach6)
 );
 
@@ -258,8 +277,17 @@ denise_sprites_shifter sps7
   .chip48(chip48),
   .data_in(data_in),
   .sprdata(sprdat7),
+  .diag_pre_hit(diag_pre[7]),
+  .diag_load_evt(diag_ld[7]),
   .attach(attach7)
 );
+
+//--------------------------------------------------------------------------------------
+
+// DIAG (round 15, throwaway): OR the per-sprite diagnostic flags across all 8
+// shifters so denise can drive a visible border marker. Not for upstream.
+assign diag_pre_hit  = |diag_pre;
+assign diag_load_any = |diag_ld;
 
 //--------------------------------------------------------------------------------------
 

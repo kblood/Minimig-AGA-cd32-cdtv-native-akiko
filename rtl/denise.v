@@ -360,6 +360,9 @@ denise_playfields plfm0
 wire [1:0] spres_d;
 assign spres_d = (spres == 2'b00) ? shres ? 2'b10 : 2'b01 : spres;
 
+wire diag_pre_hit;   // DIAG: round-14 write-vs-load collision fired this cycle
+wire diag_load_any;  // DIAG: some sprite loaded its shift register this cycle
+
 denise_sprites sprm0
 (
   .clk(clk),
@@ -377,6 +380,8 @@ denise_sprites sprm0
   .osprm(osprm),
   .spres(spres_d),
   .nsprite(nsprite),
+  .diag_pre_hit(diag_pre_hit),
+  .diag_load_any(diag_load_any),
   .sprdata(sprdata)
 );
 
@@ -473,8 +478,56 @@ wire t_blank;
 
 assign t_blank = /*blank |*/ (ecs & ecsena & brdrblnk & (~window_del | ~display_ena));
 
+//--------------------------------------------------------------------------------------
+// DIAG (round 15, throwaway diagnostic - never ship upstream)
+//
+// Make the round-14 mechanism visible to the naked eye. The border (everything
+// outside the display window) is painted:
+//   bright magenta - a SPRxDATx-write-on-SPRxPOS-match collision fired within
+//                    the last ~8 PAL frames (~160 ms). This is the event the
+//                    round-14 fix changes the behaviour of.
+//   bright cyan    - sticky: at least one such collision has happened since
+//                    the last reset, but not recently.
+//   dark green     - liveness: some sprite loaded its shift register within the
+//                    last ~8 frames. Proves the tap and this build are alive.
+// Priority magenta > cyan > dark green > normal border.
+//
+// 8 PAL frames at 28.375 MHz ~= 4.54M clocks; 4.5M is close enough.
+localparam [22:0] DIAG_HOLD = 23'd4500000;
+
+reg [22:0] diag_hit_cnt;
+reg [22:0] diag_act_cnt;
+reg        diag_sticky;
+
+always @(posedge clk) begin
+  if (reset) begin
+    diag_hit_cnt <= 23'd0;
+    diag_act_cnt <= 23'd0;
+    diag_sticky  <= 1'b0;
+  end else begin
+    if (diag_pre_hit) begin
+      diag_hit_cnt <= DIAG_HOLD;
+      diag_sticky  <= 1'b1;
+    end else if (|diag_hit_cnt)
+      diag_hit_cnt <= diag_hit_cnt - 23'd1;
+
+    if (diag_load_any)
+      diag_act_cnt <= DIAG_HOLD;
+    else if (|diag_act_cnt)
+      diag_act_cnt <= diag_act_cnt - 23'd1;
+  end
+end
+
+wire diag_flash  = |diag_hit_cnt;
+wire diag_alive  = |diag_act_cnt;
+wire diag_on     = diag_flash | diag_sticky | diag_alive;
+wire [23:0] diag_rgb = diag_flash  ? 24'hFF00FF   // magenta - firing now
+                     : diag_sticky ? 24'h00FFFF   // cyan    - has fired
+                                   : 24'h004000;  // dark green - alive
+wire diag_border = ~window_del & diag_on;
+
 // RGB video output
-assign {red[7:0],green[7:0],blue[7:0]} = t_blank ? 24'h000000 : out_rgb;
+assign {red[7:0],green[7:0],blue[7:0]} = diag_border ? diag_rgb : (t_blank ? 24'h000000 : out_rgb);
 
 
 endmodule
