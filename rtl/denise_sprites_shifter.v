@@ -32,11 +32,15 @@ parameter DATB = 2'b11;
 // local signals
 reg    [63:0] datla;    // data register A
 reg    [63:0] datlb;    // data register B
+reg    [63:0] datla_pre;  // data register A, value before the most recent write
+reg    [63:0] datlb_pre;  // data register B, value before the most recent write
 reg    [63:0] shifta;    // shift register A
 reg    [63:0] shiftb;    // shift register B
 reg    [8:0] hstart;    // horizontal start value
 reg    armed;        // sprite "armed" signal
 reg    load;        // load shift register signal
+reg    load_pre_a;      // load shift register from datla_pre instead of datla
+reg    load_pre_b;      // load shift register from datlb_pre instead of datlb
 reg    load_del;
 
 //--------------------------------------------------------------------------------------
@@ -69,9 +73,15 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 // generate load signal
+wire hmatch = armed && (hpos[7:0] == hstart[7:0]) && (fmode[15] || (hpos[8] == hstart[8])) ? 1'b1 : 1'b0;
+
+// WinUAE 1e47b230: a bus write to SPRxDATx landing on the cycle SPRxPOS matches
+// is only visible in that line's shift register copy when SPRCTL bit 0 is set.
 always @(posedge clk)
   if (clk7_en) begin
-    load <= armed && (hpos[7:0] == hstart[7:0]) && (fmode[15] || (hpos[8] == hstart[8])) ? 1'b1 : 1'b0;
+    load <= hmatch;
+    load_pre_a <= hmatch && !hstart[0] && aen && address==DATA;
+    load_pre_b <= hmatch && !hstart[0] && aen && address==DATB;
   end
 
 //always @(posedge clk)
@@ -101,6 +111,7 @@ always @(posedge clk) begin
 	if(clk7_en && aen && address==DATA) st <= 1;
 	if(st & clk7n_en) begin
 		st <= 0;
+		datla_pre <= datla;
 		datla <= spr_fmode_dat;
 	end
 end
@@ -111,6 +122,7 @@ always @(posedge clk) begin
 	if(clk7_en && aen && address==DATB) st <= 1;
 	if(st & clk7n_en) begin
 		st <= 0;
+		datlb_pre <= datlb;
 		datlb <= spr_fmode_dat;
 	end
 end
@@ -121,8 +133,8 @@ end
 always @(posedge clk)
   if (clk7_en && load) // AMR - load_del) // load new data into shift register
   begin
-    shifta[63:0] <= datla[63:0];
-    shiftb[63:0] <= datlb[63:0];
+    shifta[63:0] <= load_pre_a ? datla_pre[63:0] : datla[63:0];
+    shiftb[63:0] <= load_pre_b ? datlb_pre[63:0] : datlb[63:0];
   end
   else if (shift)
   begin
