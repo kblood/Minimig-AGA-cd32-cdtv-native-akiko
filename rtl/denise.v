@@ -490,7 +490,20 @@ assign t_blank = /*blank |*/ (ecs & ecsena & brdrblnk & (~window_del | ~display_
 //                    the last reset, but not recently.
 //   dark green     - liveness: some sprite loaded its shift register within the
 //                    last ~8 frames. Proves the tap and this build are alive.
-// Priority magenta > cyan > dark green > normal border.
+//   dark blue      - idle: none of the above. The border is ALWAYS painted, so
+//                    "can you see the marker at all" is answerable at a glance
+//                    and a normal-looking border can never be mistaken for a
+//                    quiet instrument.
+// Priority magenta > cyan > dark green > dark blue.
+//
+// The border is (~window_del | ~display_ena), which is the same expression
+// t_blank uses for the ECS border-blank region. denise's `window` is HORIZONTAL
+// only (it is driven purely by hdiwstrt/hdiwstop), so ~window_del alone selects
+// just the narrow left/right strips outside the display window - and those are
+// exactly the pixels minimig.v's hblank (~hde) crops away, which made an
+// earlier version of this marker invisible on real hardware. ~display_ena adds
+// every line above and below the vertical display window, which is a large,
+// always-visible area.
 //
 // 8 PAL frames at 28.375 MHz ~= 4.54M clocks; 4.5M is close enough.
 localparam [22:0] DIAG_HOLD = 23'd4500000;
@@ -520,11 +533,11 @@ end
 
 wire diag_flash  = |diag_hit_cnt;
 wire diag_alive  = |diag_act_cnt;
-wire diag_on     = diag_flash | diag_sticky | diag_alive;
-wire [23:0] diag_rgb = diag_flash  ? 24'hFF00FF   // magenta - firing now
-                     : diag_sticky ? 24'h00FFFF   // cyan    - has fired
-                                   : 24'h004000;  // dark green - alive
-wire diag_border = ~window_del & diag_on;
+wire [23:0] diag_rgb = diag_flash  ? 24'hFF00FF   // magenta    - firing now
+                     : diag_sticky ? 24'h00FFFF   // cyan       - has fired
+                     : diag_alive  ? 24'h004000   // dark green - sprites live
+                                   : 24'h000040;  // dark blue  - idle
+wire diag_border = ~window_del | ~display_ena;
 
 // RGB video output
 assign {red[7:0],green[7:0],blue[7:0]} = diag_border ? diag_rgb : (t_blank ? 24'h000000 : out_rgb);
