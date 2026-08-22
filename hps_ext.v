@@ -58,7 +58,13 @@ module hps_ext
 
 	input             cdda_req,
 	output reg        cdda_wr,
-	output reg [15:0] cdda_dout
+	output reg [15:0] cdda_dout,
+
+	// Chipset bus trace sub-channel (UIO class 7'b1111011 = 0xF600).
+	// Drain-only, single byte per io_din[15:0]==0x62 read. 0x00 = ring empty.
+	input       [7:0] chipset_trace_din,
+	output reg        chipset_trace_rd,
+	output reg        chipset_cs_trace
 );
 
 assign EXT_BUS[15:0] = io_fpga ? fpga_dout : io_dout;
@@ -92,6 +98,7 @@ always@(posedge clk_sys) begin
 
 	{ide_rd, ide_wr} <= 0;
 	cdda_wr <= 0;
+	chipset_trace_rd <= 0;
 	if((ide_rd | ide_wr) & ~&ide_addr[3:0]) ide_addr <= ide_addr + 1'd1;
 
 	if(~io_uio) begin
@@ -100,6 +107,7 @@ always@(posedge clk_sys) begin
 		byte_cnt <= 0;
 		ide_cs <= 0;
 		cdda_cs <= 0;
+		chipset_cs_trace <= 0;
 		if(cmd == 'h2D) sset <= 1;
 	end
 	else if(io_strobe) begin
@@ -113,6 +121,8 @@ always@(posedge clk_sys) begin
 			ide_addr <= {io_din[8],io_din[3:0]};
 			ide_cs   <= (io_din[15:9] == 7'b1111000);
 			cdda_cs  <= (io_din[15:9] == 7'b1111001);
+			// Chipset bus trace — dedicated UIO class (drain-only, debug).
+			chipset_cs_trace <= (io_din[15:9] == 7'b1111011);
 		end
 
 		if(byte_cnt == 0) begin
@@ -188,10 +198,16 @@ always@(posedge clk_sys) begin
 					end
 				end
 
-				'h62: if(byte_cnt >= 3 && ide_cs) begin
-							io_dout <= ide_din;
-							ide_rd <= 1;
-						end
+				'h62: begin
+					if(byte_cnt >= 3 && ide_cs) begin
+						io_dout <= ide_din;
+						ide_rd  <= 1;
+					end
+					if(byte_cnt >= 3 && chipset_cs_trace) begin
+						io_dout          <= {8'h00, chipset_trace_din};
+						chipset_trace_rd <= 1;
+					end
+				end
 			endcase
 		end
 	end

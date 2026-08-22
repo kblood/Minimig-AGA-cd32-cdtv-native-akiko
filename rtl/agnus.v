@@ -95,8 +95,20 @@ module agnus
 	input         a1k,             // enable A1000 OCS features
 	input         ecs,             // enable ECS features
 	input         aga,             // enables AGA features
-	input         floppy_speed     // allocates refresh slots for disk DMA
+	input         floppy_speed,    // allocates refresh slots for disk DMA
+
+	// Chipset bus trace UIO drain port (active only when CHIPSET_TRACE=1).
+	// With CHIPSET_TRACE=0 the trace instance is generate-elided and uio_dout
+	// is tied to 0, so these wires DCE out of the final bitstream.
+	input             chipset_trace_uio_cs,
+	input             chipset_trace_uio_rd,
+	output      [7:0] chipset_trace_uio_dout
 );
+
+// Compile-time gate. 0 = production (bit-identical RBF, ring DCE'd).
+//                   1 = trace build (instantiate ring + UIO drain).
+// Flipped to 1 in this hybris-blit-vpos-trace experiment worktree only.
+localparam CHIPSET_TRACE = 1;
 
 //register names and adresses
 localparam DMACON  = 9'h096;
@@ -483,7 +495,105 @@ assign strhor_denise = hpos==(6*2-1) && (vpos > 8 || ecs) ? 1'b1 : 1'b0;
 assign strhor_paula = hpos==(6*2+1) ? 1'b1 : 1'b0; //hack
 
 //--------------------------------------------------------------------------------------
+// Chipset bus trace — see chipset-trace-plan.md.
+// Filter selects the bitplane display / copper register window. Same comb
+// expression in sim and hardware so the captured stream is identical.
 
+wire trace_is_target_reg =
+    (reg_address[8:1] >= 8'h70 && reg_address[8:1] <= 8'h7F) ||   // BPL*PT
+    (reg_address[8:1] >= 8'h80 && reg_address[8:1] <= 8'h86) ||   // BPLCON*, BPLxMOD
+    (reg_address[8:1] >= 8'h40 && reg_address[8:1] <= 8'h45) ||   // COP*LC, COPJMP*
+    (reg_address[8:1] == 8'h49) || (reg_address[8:1] == 8'h4A) || // DDFSTRT/STOP
+    (reg_address[8:1] >= 8'hA0 && reg_address[8:1] <= 8'hBF) ||   // SPR*POS/CTL/DATA/DATB
+    (reg_address[8:1] == 8'hFE);                                  // FMODE
+
+wire trace_cpu_write = cpu_custom & (hwr | lwr);
+wire trace_cop_write = dma_cop;
+wire trace_blt_write = dma_blt & dbwe;
+
+wire       trace_write_strobe = trace_is_target_reg & (trace_cpu_write | trace_cop_write | trace_blt_write);
+wire [2:0] trace_src          = trace_cop_write ? 3'b001
+                              : trace_blt_write ? 3'b010
+                                                : 3'b000;        // CPU
+
+// Blit-done pseudo-event: falling edge of blit_busy (Hybris turret-jitter
+// investigation — measure the raster-vs-blit-completion race directly
+// instead of only reasoning about it). Committed to the same ring as the
+// register-write trace, tagged with a sentinel reg_addr so it is
+// distinguishable from any real chipset register.
+//
+// Sentinel choice: 8'hFD (word address 9'h1FA). NOT 8'hFF — that word
+// address (9'h1FE) is the HRM-documented "NO-OP" custom register, a real
+// assigned address some copperlists use as a deliberate filler/no-effect
+// cycle. NOT 8'hFE — that is FMODE (AGA), already decoded and traced by
+// this same module (agnus_bitplanedma.v, agnus_spritedma.v,
+// denise_bitplanes.v, denise_sprites.v). 8'hFD sits in the reserved/
+// unimplemented gap above SPR*DATB and below FMODE; grepping this RTL tree
+// for 9'h1f[0-9a-f] address decodes turns up only 9'h1f0 (userio.v SCRDAT)
+// and 9'h1fc (FMODE) — 9'h1fa is decoded nowhere, so it cannot collide with
+// a real register write.
+localparam BLIT_DONE_SENTINEL = 8'hFD;
+
+reg blit_busy_d;
+always @(posedge clk) begin
+    if (reset)
+        blit_busy_d <= 1'b0;
+    else
+        blit_busy_d <= blit_busy;
+end
+
+wire blit_done_edge = blit_busy_d & ~blit_busy;
+
+// blit_done_edge cannot itself land on the same cycle as a real
+// trace_blt_write: agnus_blitter.v clears `busy` the cycle *after* `done`
+// (the last D-channel write), so blit_busy is still 1 during that write and
+// only falls once dma_blt/dbwe for that write have already retired. A CPU
+// or copper write to a filtered register CAN coincide with the edge cycle
+// (they run on independent timelines), so that case is handled explicitly
+// below rather than silently dropped: on collision the sentinel is latched
+// and emitted on the next cycle that has no competing register write, which
+// costs at most one extra clk of vpos/hpos slop on an already rare event —
+// negligible against the field-scale (vsync-period) race under
+// investigation.
+reg blit_done_deferred;
+always @(posedge clk) begin
+    if (reset)
+        blit_done_deferred <= 1'b0;
+    else if (blit_done_edge && trace_write_strobe)
+        blit_done_deferred <= 1'b1;
+    else if (blit_done_deferred && !trace_write_strobe)
+        blit_done_deferred <= 1'b0;
+end
+
+wire blit_done_pulse = (blit_done_edge && !trace_write_strobe) ||
+                       (blit_done_deferred && !trace_write_strobe);
+
+wire        final_write_strobe = trace_write_strobe | blit_done_pulse;
+wire [7:0]  final_reg_addr     = trace_write_strobe ? reg_address[8:1] : BLIT_DONE_SENTINEL;
+wire [15:0] final_data         = trace_write_strobe ? data_in         : 16'h0000;
+wire [2:0]  final_src          = trace_write_strobe ? trace_src       : 3'b010; // blt
+
+generate
+if (CHIPSET_TRACE) begin : g_trace
+    chipset_bus_trace u_trace
+    (
+        .clk          (clk),
+        .reset        (reset),
+        .write_strobe (final_write_strobe),
+        .reg_addr     (final_reg_addr),
+        .data         (final_data),
+        .src          (final_src),
+        .vpos         (vpos),
+        .hpos         (hpos),
+        .dbwe         (dbwe),
+        .uio_cs_trace (chipset_trace_uio_cs),
+        .uio_rd       (chipset_trace_uio_rd),
+        .uio_dout     (chipset_trace_uio_dout)
+    );
+end else begin : g_no_trace
+    assign chipset_trace_uio_dout = 8'h00;
+end
+endgenerate
 
 endmodule
 
