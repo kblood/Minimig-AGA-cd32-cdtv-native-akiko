@@ -506,7 +506,9 @@ wire trace_is_target_reg =
     (reg_address[8:1] == 8'h49) || (reg_address[8:1] == 8'h4A) || // DDFSTRT/STOP
     (reg_address[8:1] >= 8'h90 && reg_address[8:1] <= 8'h9F) ||   // SPR*PTH/PTL
     (reg_address[8:1] >= 8'hA0 && reg_address[8:1] <= 8'hBF) ||   // SPR*POS/CTL/DATA/DATB
-    (reg_address[8:1] == 8'hFE);                                  // FMODE
+    (reg_address[8:1] == 8'hFE) ||                                // FMODE
+    (reg_address[8:1] == 8'h20) ||                                // BLTCON0
+    (reg_address[8:1] == 8'h2C);                                  // BLTSIZE (triggers the blit)
 
 wire trace_cpu_write = cpu_custom & (hwr | lwr);
 wire trace_cop_write = dma_cop;
