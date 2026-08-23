@@ -504,16 +504,26 @@ wire trace_is_target_reg =
     (reg_address[8:1] >= 8'h80 && reg_address[8:1] <= 8'h86) ||   // BPLCON*, BPLxMOD
     (reg_address[8:1] >= 8'h40 && reg_address[8:1] <= 8'h45) ||   // COP*LC, COPJMP*
     (reg_address[8:1] == 8'h49) || (reg_address[8:1] == 8'h4A) || // DDFSTRT/STOP
+    (reg_address[8:1] >= 8'h90 && reg_address[8:1] <= 8'h9F) ||   // SPR*PTH/PTL
     (reg_address[8:1] >= 8'hA0 && reg_address[8:1] <= 8'hBF) ||   // SPR*POS/CTL/DATA/DATB
     (reg_address[8:1] == 8'hFE);                                  // FMODE
 
 wire trace_cpu_write = cpu_custom & (hwr | lwr);
 wire trace_cop_write = dma_cop;
 wire trace_blt_write = dma_blt & dbwe;
+// Sprite-DMA-channel writes (SPR*PTH/PTL autofetch advance and the per-
+// line SPR*POS/CTL/DATA/DATB fetches) never go through cpu_custom/dma_cop/
+// dma_blt -- agnus_spritedma.v writes its own register bank whenever it
+// holds the shared reg_address/data_in bus (dma_spr granted), the same
+// pattern dma_cop already uses here. Without this, sprite display -- set
+// up once via a pointer write, then driven entirely by autofetch -- is
+// architecturally invisible to this trace regardless of capture length.
+wire trace_spr_write = dma_spr;
 
-wire       trace_write_strobe = trace_is_target_reg & (trace_cpu_write | trace_cop_write | trace_blt_write);
+wire       trace_write_strobe = trace_is_target_reg & (trace_cpu_write | trace_cop_write | trace_blt_write | trace_spr_write);
 wire [2:0] trace_src          = trace_cop_write ? 3'b001
                               : trace_blt_write ? 3'b010
+                              : trace_spr_write ? 3'b011
                                                 : 3'b000;        // CPU
 
 // Blit-done pseudo-event: falling edge of blit_busy (Hybris turret-jitter
