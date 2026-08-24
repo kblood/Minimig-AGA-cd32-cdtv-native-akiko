@@ -14,7 +14,8 @@
 //   [36:26] vpos[10:0]
 //   [25:17] hpos[8:0]
 //   [16]    dbwe (true write to chip RAM, only valid for CPU/blt sources)
-//   [15:0]  reserved (0)
+//   [15]    is_gap -- 1 marks this entry as a GAP record, see below
+//   [14:0]  reserved (0)
 //
 // Drain protocol (matches akiko_bus_trace pattern):
 //   byte 0: data[7:0]
@@ -91,9 +92,12 @@ wire       full  = ((wr_ptr + 10'd1) == rd_ptr);
 // Saturating count of events dropped since the last GAP entry was emitted.
 reg [15:0] drop_cnt;
 
-// Per-entry sentinel byte, stored alongside the entry so the drain does not
-// have to re-derive it: 8'hFF normal, 8'hFE gap.
-reg [7:0] tag [0:1023];
+// The gap flag rides in the entry's own reserved bit [15]. It deliberately
+// does NOT get its own array: `ring` is read asynchronously by the drain
+// mux, which Quartus cannot map onto M10K, so every bit of this ring costs a
+// register. A parallel 1024x8 tag array added 8192 of them and took the fit
+// from passing to 125% ALM utilisation on the 5CSEBA6U23I7. Bits [15:0] were
+// already allocated and unused, so this costs nothing.
 
 // Capture: commit one entry per pulse of write_strobe, unless the ring is
 // full, in which case count the loss instead of overwriting unread data.
@@ -114,8 +118,8 @@ always @(posedge clk) begin
 			                 vpos,                  // beam pos at recovery
 			                 hpos,
 			                 1'b0,                  // dbwe
-			                 16'h0000};
-			tag[wr_ptr] <= 8'hFE;
+			                 1'b1,                  // [15] is_gap
+			                 15'h0000};
 			wr_ptr   <= wr_ptr + 1'b1;
 			drop_cnt <= 16'd0;
 		end
@@ -126,8 +130,8 @@ always @(posedge clk) begin
 			                 vpos,                  // [36:26]
 			                 hpos,                  // [25:17]
 			                 dbwe,                  // [16]
-			                 16'h0000};             // [15:0] reserved
-			tag[wr_ptr] <= 8'hFF;
+			                 1'b0,                  // [15] is_gap
+			                 15'h0000};             // [14:0] reserved
 			wr_ptr <= wr_ptr + 1'b1;
 		end
 	end
@@ -141,22 +145,38 @@ end
 // Drain: byte_idx walks 0..7 across the entry; rd_ptr advances after byte 7.
 reg [2:0] byte_idx;
 
+// The entry under the read pointer is REGISTERED, not muxed out of the
+// array combinationally. This is not a pipelining nicety -- it decides
+// whether the ring is memory or logic. An asynchronous read forces
+// Quartus to build all 1024x64 bits out of registers: measured at 49191
+// registers and 12431 ALUTs for this module alone, 0 memory bits, which
+// overflows the 5CSEBA6U23I7 (5424 LABs required, 4191 available).
+// Registering the read makes it a simple-dual-port synchronous RAM and it
+// infers into M10K, the same way cpu_trace.v does with its 512x128 ring.
+//
+// rd_data lags rd_ptr by one clk. That is harmless here: rd_ptr only moves
+// after byte 7 of an entry, and the host spends a whole SPI byte transfer
+// (many clk cycles) on each byte, so rd_data is settled long before byte 0
+// of the next entry is sampled.
+reg [63:0] rd_data;
+always @(posedge clk) rd_data <= ring[rd_ptr];
+
 always @(*) begin
 	if (empty) begin
 		uio_dout = 8'h00;
 	end else begin
 		case (byte_idx)
-			3'd0: uio_dout = ring[rd_ptr][55:48];                    // data lo
-			3'd1: uio_dout = ring[rd_ptr][63:56];                    // data hi
-			3'd2: uio_dout = ring[rd_ptr][47:40];                    // reg_addr
-			3'd3: uio_dout = {ring[rd_ptr][16],                      // dbwe
-			                  ring[rd_ptr][39:37],                   // src[2:0]
+			3'd0: uio_dout = rd_data[55:48];                    // data lo
+			3'd1: uio_dout = rd_data[63:56];                    // data hi
+			3'd2: uio_dout = rd_data[47:40];                    // reg_addr
+			3'd3: uio_dout = {rd_data[16],                      // dbwe
+			                  rd_data[39:37],                   // src[2:0]
 			                  1'b0,                                  // pad
-			                  ring[rd_ptr][36:34]};                  // vpos[10:8]
-			3'd4: uio_dout = ring[rd_ptr][33:26];                    // vpos[7:0]
-			3'd5: uio_dout = ring[rd_ptr][24:17];                    // hpos[7:0]
-			3'd6: uio_dout = {7'b0, ring[rd_ptr][25]};               // hpos[8]
-			3'd7: uio_dout = tag[rd_ptr];                            // 0xFF normal, 0xFE gap
+			                  rd_data[36:34]};                  // vpos[10:8]
+			3'd4: uio_dout = rd_data[33:26];                    // vpos[7:0]
+			3'd5: uio_dout = rd_data[24:17];                    // hpos[7:0]
+			3'd6: uio_dout = {7'b0, rd_data[25]};               // hpos[8]
+			3'd7: uio_dout = rd_data[15] ? 8'hFE : 8'hFF;       // gap / normal
 		endcase
 	end
 end
