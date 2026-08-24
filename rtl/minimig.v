@@ -274,6 +274,7 @@ module minimig
 	input         chipset_trace_uio_cs,
 	input         chipset_trace_uio_rd,
 	output  [7:0] chipset_trace_uio_dout,
+	output [10:0] agnus_vpos,
 
 	// A2065 register file + doorbell
 	// A2065 memory port — goes to ddram_ctrl alongside the fast RAM
@@ -497,7 +498,8 @@ agnus AGNUS1
 	.floppy_speed(floppy_config[0]),
 	.chipset_trace_uio_cs(chipset_trace_uio_cs),
 	.chipset_trace_uio_rd(chipset_trace_uio_rd),
-	.chipset_trace_uio_dout(chipset_trace_uio_dout)
+	.chipset_trace_uio_dout(chipset_trace_uio_dout),
+	.vpos_out(agnus_vpos)
 );
 
 //instantiate paula

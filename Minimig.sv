@@ -340,7 +340,8 @@ cpu_wrapper cpu_wrapper
 
 	.cpu_trace_cs   (cpu_cs_trace  ),
 	.cpu_trace_rd   (cpu_trace_rd  ),
-	.cpu_trace_dout (cpu_trace_din )
+	.cpu_trace_dout (cpu_trace_din ),
+	.trace_vpos     (agnus_vpos    )
 );
 
 wire        cpu_cs_trace;
@@ -451,6 +452,9 @@ wire        a2065_mem_readdatavalid, a2065_mem_waitrequest;
 wire        chipset_cs_trace;
 wire        chipset_trace_rd;
 wire  [7:0] chipset_trace_din;
+
+// Raster position, agnus -> minimig -> here -> cpu_wrapper's vpos-window arm.
+wire [10:0] agnus_vpos;
 
 wire [15:0] fastchip_dout;
 wire        fastchip_sel;
@@ -684,6 +688,7 @@ minimig minimig
 	.chipset_trace_uio_cs   (chipset_cs_trace ),
 	.chipset_trace_uio_rd   (chipset_trace_rd ),
 	.chipset_trace_uio_dout (chipset_trace_din),
+	.agnus_vpos             (agnus_vpos       ),
 
 	.a2065_clk_ddr(DDRAM_CLK),
 	.a2065_mem_address(a2065_mem_address),

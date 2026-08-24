@@ -79,7 +79,8 @@ module cpu_wrapper
 
 	input             cpu_trace_cs,
 	input             cpu_trace_rd,
-	output      [7:0] cpu_trace_dout
+	output      [7:0] cpu_trace_dout,
+	input      [10:0] trace_vpos
 );
 
 assign ramsel       = cpu_req & ~sel_nmi_vector & (sel_zram | sel_chipram | sel_kickram | sel_dd | sel_rtg);
@@ -304,12 +305,25 @@ wire [15:0] trace_data = cpucfg[1:0] ? cpu_din     : fx_data_q;
 wire  [1:0] trace_st   = cpucfg[1:0] ? cpustate_p  : 2'b00;
 wire        trace_sv   = cpucfg[1:0] ? 1'b0        : fx_fc_q[2];
 
+// Localize-then-zoom vpos-window arm (Hybris cycle-diff-matrix goal): only
+// accumulate CPU bus-cycle events while the raster is inside the reward-
+// window AUD0-3/SPRxPOS divergence band Round 17 measured (buggy-PAL
+// vpos 174-187, fixed-PAL vpos 159-172; PAL smoke-test range 160-190 covers
+// both). Free-running would wrap this 512-entry ring within a fraction of
+// a single scanline; gating on vpos means the ring instead holds the last
+// ~512 CPU accesses seen specifically inside this window, across however
+// many frames back that takes.
+localparam [10:0] TRACE_WINDOW_LO = 11'd160;
+localparam [10:0] TRACE_WINDOW_HI = 11'd190;
+wire trace_vpos_in_window = (trace_vpos >= TRACE_WINDOW_LO) && (trace_vpos <= TRACE_WINDOW_HI);
+wire trace_ev_windowed = trace_ev & trace_vpos_in_window;
+
 cpu_trace #(.CAPTURE_ENABLE(1)) u_cpu_trace(
 	.clk          (clk            ),
 	.reset        (~reset         ),
 	.cpu_clkena   (clkena_p_val   ),
 	.cpu_stopped  (1'b0           ),
-	.cap_ev       (trace_ev       ),
+	.cap_ev       (trace_ev_windowed ),
 	.cpu_addr     (trace_addr     ),
 	.cpu_data     (trace_data     ),
 	.cpustate     (trace_st       ),

@@ -102,7 +102,12 @@ module agnus
 	// is tied to 0, so these wires DCE out of the final bitstream.
 	input             chipset_trace_uio_cs,
 	input             chipset_trace_uio_rd,
-	output      [7:0] chipset_trace_uio_dout
+	output      [7:0] chipset_trace_uio_dout,
+
+	// Raster position, exported for cpu_trace's vpos-window arm (Hybris
+	// cycle-diff-matrix goal -- localize-then-zoom capture around a known
+	// vpos range instead of free-running the CPU trace ring).
+	output     [10:0] vpos_out
 );
 
 // Compile-time gate. 0 = production (bit-identical RBF, ring DCE'd).
@@ -451,6 +456,7 @@ agnus_blitter bl1
 
 wire  [8:0] hpos;      //alternative horizontal beam counter
 wire [10:0] vpos;      //vertical beam counter
+assign vpos_out = vpos;
 wire        vbl;       //JB: vertical blanking
 wire        vblend;    //JB: last line of vertical blanking
 wire [15:0] data_bmc;  //beam counter data out
