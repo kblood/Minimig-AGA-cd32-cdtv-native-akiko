@@ -64,7 +64,12 @@ module hps_ext
 	// Drain-only, single byte per io_din[15:0]==0x62 read. 0x00 = ring empty.
 	input       [7:0] chipset_trace_din,
 	output reg        chipset_trace_rd,
-	output reg        chipset_cs_trace
+	output reg        chipset_cs_trace,
+	// Cross-chip cycle tracer sub-channel (UIO class 7'b1111111 = 0xFE00).
+	// Drain-only, same shape as the chipset trace class above.
+	input       [7:0] cpu_trace_din,
+	output reg        cpu_trace_rd,
+	output reg        cpu_cs_trace
 );
 
 assign EXT_BUS[15:0] = io_fpga ? fpga_dout : io_dout;
@@ -99,6 +104,7 @@ always@(posedge clk_sys) begin
 	{ide_rd, ide_wr} <= 0;
 	cdda_wr <= 0;
 	chipset_trace_rd <= 0;
+	cpu_trace_rd <= 0;
 	if((ide_rd | ide_wr) & ~&ide_addr[3:0]) ide_addr <= ide_addr + 1'd1;
 
 	if(~io_uio) begin
@@ -108,6 +114,7 @@ always@(posedge clk_sys) begin
 		ide_cs <= 0;
 		cdda_cs <= 0;
 		chipset_cs_trace <= 0;
+		cpu_cs_trace <= 0;
 		if(cmd == 'h2D) sset <= 1;
 	end
 	else if(io_strobe) begin
@@ -123,6 +130,8 @@ always@(posedge clk_sys) begin
 			cdda_cs  <= (io_din[15:9] == 7'b1111001);
 			// Chipset bus trace — dedicated UIO class (drain-only, debug).
 			chipset_cs_trace <= (io_din[15:9] == 7'b1111011);
+			// Cross-chip cycle tracer — dedicated UIO class (drain-only, debug).
+			cpu_cs_trace     <= (io_din[15:9] == 7'b1111111);
 		end
 
 		if(byte_cnt == 0) begin
@@ -206,6 +215,11 @@ always@(posedge clk_sys) begin
 					if(byte_cnt >= 3 && chipset_cs_trace) begin
 						io_dout          <= {8'h00, chipset_trace_din};
 						chipset_trace_rd <= 1;
+					end
+
+					if(byte_cnt >= 3 && cpu_cs_trace) begin
+						io_dout      <= {8'h00, cpu_trace_din};
+						cpu_trace_rd <= 1;
 					end
 				end
 			endcase

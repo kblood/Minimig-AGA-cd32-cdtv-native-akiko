@@ -336,8 +336,16 @@ cpu_wrapper cpu_wrapper
 	//custom CPU signals
 	.cpustate     (cpu_state       ),
 	.cacr         (cpu_cacr        ),
-	.nmi_addr     (cpu_nmi_addr    )
+	.nmi_addr     (cpu_nmi_addr    ),
+
+	.cpu_trace_cs   (cpu_cs_trace  ),
+	.cpu_trace_rd   (cpu_trace_rd  ),
+	.cpu_trace_dout (cpu_trace_din )
 );
+
+wire        cpu_cs_trace;
+wire        cpu_trace_rd;
+wire  [7:0] cpu_trace_din;
 
 wire [15:0] ram_dout1;
 wire        ram_ready1;

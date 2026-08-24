@@ -16,6 +16,7 @@ set_global_assignment -name VERILOG_FILE rtl/gary.v
 set_global_assignment -name VERILOG_FILE rtl/rtg.v
 set_global_assignment -name VERILOG_FILE rtl/akiko.v
 set_global_assignment -name VERILOG_FILE rtl/chipset_bus_trace.v
+set_global_assignment -name VERILOG_FILE rtl/cpu_trace.v
 set_global_assignment -name VERILOG_FILE rtl/fastchip.v
 set_global_assignment -name VERILOG_FILE rtl/userio.v
 set_global_assignment -name VERILOG_FILE rtl/cart.v

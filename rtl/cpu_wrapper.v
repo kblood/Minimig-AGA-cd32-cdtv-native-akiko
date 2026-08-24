@@ -75,7 +75,11 @@ module cpu_wrapper
 
 	output reg  [1:0] cpustate,
 	output reg  [3:0] cacr,
-	output reg [31:0] nmi_addr
+	output reg [31:0] nmi_addr,
+
+	input             cpu_trace_cs,
+	input             cpu_trace_rd,
+	output      [7:0] cpu_trace_dout
 );
 
 assign ramsel       = cpu_req & ~sel_nmi_vector & (sel_zram | sel_chipram | sel_kickram | sel_dd | sel_rtg);
@@ -267,6 +271,54 @@ fx68k cpu_inst_o
 	.iEdb(cpu_din),
 	.oEdb(cpu_dout_o),
 	.eab(cpu_addr_o)
+);
+
+// Cross-chip cycle tracer (Hybris cycle-diff-matrix goal): tap whichever
+// CPU core cpucfg[1:0] actually selects, same mux pattern the CD32/CDTV
+// lineage (Minimig-AGA_MiSTer-wt-hybrisB24) already validated. Simplified
+// vs. that lineage: no skipFetch/cpu_stopped gating here (this worktree's
+// TG68KdotC_Kernel doesn't expose those ports) -- fetch_ev_p can overcount
+// on TG68K prefetch-skip cycles the CDTV lineage's version filters out.
+// Harmless for the plain-68000 (cpucfg==0) config Hybris actually runs
+// under, where trace_ev == fetch_ev_o regardless.
+wire clkena_p_val = ~cpu_req | chipready | ramready | fastchip_ready;
+wire fetch_ev_p   = clkena_p_val & (cpustate_p == 2'b00);
+
+reg as_o_d;
+always @(posedge clk) as_o_d <= as_o;
+wire as_rise = as_o & ~as_o_d;
+
+reg [31:0] fx_addr_q;
+reg [15:0] fx_data_q;
+reg  [2:0] fx_fc_q;
+always @(posedge clk) if (~as_o) begin
+	fx_addr_q <= {8'd0, cpu_addr_o, 1'b0};
+	fx_data_q <= cpu_din;
+	fx_fc_q   <= fc_o;
+end
+wire fetch_ev_o = as_rise & fx_fc_q[1] & ~fx_fc_q[0];
+
+wire        trace_ev   = cpucfg[1:0] ? fetch_ev_p  : fetch_ev_o;
+wire [31:0] trace_addr = cpucfg[1:0] ? cpu_addr_p  : fx_addr_q;
+wire [15:0] trace_data = cpucfg[1:0] ? cpu_din     : fx_data_q;
+wire  [1:0] trace_st   = cpucfg[1:0] ? cpustate_p  : 2'b00;
+wire        trace_sv   = cpucfg[1:0] ? 1'b0        : fx_fc_q[2];
+
+cpu_trace #(.CAPTURE_ENABLE(1)) u_cpu_trace(
+	.clk          (clk            ),
+	.reset        (~reset         ),
+	.cpu_clkena   (clkena_p_val   ),
+	.cpu_stopped  (1'b0           ),
+	.cap_ev       (trace_ev       ),
+	.cpu_addr     (trace_addr     ),
+	.cpu_data     (trace_data     ),
+	.cpustate     (trace_st       ),
+	.supervisor   (trace_sv       ),
+	.chip_ipl     (chip_ipl       ),
+	.tg68k_sel    (cpucfg[1:0]    ),
+	.uio_cs_trace (cpu_trace_cs   ),
+	.uio_rd       (cpu_trace_rd   ),
+	.uio_dout     (cpu_trace_dout )
 );
 
 wire cpu_req = (cpustate != 1);
