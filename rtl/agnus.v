@@ -579,10 +579,72 @@ end
 wire blit_done_pulse = (blit_done_edge && !trace_write_strobe) ||
                        (blit_done_deferred && !trace_write_strobe);
 
-wire        final_write_strobe = trace_write_strobe | blit_done_pulse;
-wire [7:0]  final_reg_addr     = trace_write_strobe ? reg_address[8:1] : BLIT_DONE_SENTINEL;
-wire [15:0] final_data         = trace_write_strobe ? data_in         : 16'h0000;
-wire [2:0]  final_src          = trace_write_strobe ? trace_src       : 3'b010; // blt
+// First bitplane-DMA fetch of each frame.
+//
+// Rounds 37 and 38 established on real hardware that both addresses which
+// could vertically place the turret bob -- the CPU's blit destination and the
+// copper's BPL1PT -- are correct, so the one-scanline fault must be downstream
+// of both. If Agnus begins the bitplane fetch one line early or late on some
+// frames, the whole bitplane shifts vertically while the sprite-borne POINTS
+// list stays put, which is exactly the reported symptom. This emits one record
+// per frame carrying the fetch address, with the line in the ring's own vpos
+// field, so the test is simply whether that vpos is constant.
+//
+// Sentinel 8'hFC (word address 9'h1F8) is decoded nowhere in this RTL tree --
+// the same argument that justified 8'hFD for the blit-done event. src 3'b100
+// is already decoded as "bpl" by the userspace drain, so no binary change.
+localparam BPL_FIRST_SENTINEL = 8'hFC;
+
+reg bpl_first_armed;
+always @(posedge clk) begin
+    if (reset)
+        bpl_first_armed <= 1'b1;
+    else if (sof)
+        bpl_first_armed <= 1'b1;
+    else if (dma_bpl)
+        bpl_first_armed <= 1'b0;
+end
+
+wire bpl_first_edge    = dma_bpl & bpl_first_armed;
+wire bpl_first_blocked = trace_write_strobe | blit_done_pulse;
+
+// Same deferral pattern as blit_done: a CPU/copper write or a blit-done edge
+// can land on this cycle, so hold the event rather than drop it. At most one
+// clk of vpos/hpos slop on a once-per-frame event.
+reg bpl_first_deferred;
+always @(posedge clk) begin
+    if (reset)
+        bpl_first_deferred <= 1'b0;
+    else if (bpl_first_edge && bpl_first_blocked)
+        bpl_first_deferred <= 1'b1;
+    else if (bpl_first_deferred && !bpl_first_blocked)
+        bpl_first_deferred <= 1'b0;
+end
+
+wire bpl_first_pulse = (bpl_first_edge || bpl_first_deferred) && !bpl_first_blocked;
+
+// address_bpl is [20:1] but the ring's data field is 16 bits. The reward
+// screen's planes sit at 0x6C000..0x7FFFF, so [16:1] alone aliases across
+// planes; the high bits are recoverable from the BPL1PT stream this same
+// filter already captures. Latch on the edge so a deferred event reports the
+// address at fetch time, not one cycle later.
+reg [15:0] bpl_first_latch;
+always @(posedge clk)
+    if (bpl_first_edge)
+        bpl_first_latch <= address_bpl[16:1];
+
+wire [15:0] bpl_first_payload = bpl_first_edge ? address_bpl[16:1] : bpl_first_latch;
+
+wire        final_write_strobe = trace_write_strobe | blit_done_pulse | bpl_first_pulse;
+wire [7:0]  final_reg_addr     = trace_write_strobe ? reg_address[8:1]
+                               : blit_done_pulse    ? BLIT_DONE_SENTINEL
+                                                    : BPL_FIRST_SENTINEL;
+wire [15:0] final_data         = trace_write_strobe ? data_in
+                               : blit_done_pulse    ? 16'h0000
+                                                    : bpl_first_payload;
+wire [2:0]  final_src          = trace_write_strobe ? trace_src
+                               : blit_done_pulse    ? 3'b010   // blt
+                                                    : 3'b100;  // bpl
 
 generate
 if (CHIPSET_TRACE) begin : g_trace
