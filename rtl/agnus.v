@@ -506,20 +506,8 @@ assign strhor_paula = hpos==(6*2+1) ? 1'b1 : 1'b0; //hack
 // expression in sim and hardware so the captured stream is identical.
 
 wire trace_is_target_reg =
-    (reg_address[8:1] >= 8'h70 && reg_address[8:1] <= 8'h7F) ||   // BPL*PT
-    (reg_address[8:1] >= 8'h80 && reg_address[8:1] <= 8'h86) ||   // BPLCON*, BPLxMOD
-    (reg_address[8:1] >= 8'h40 && reg_address[8:1] <= 8'h45) ||   // COP*LC, COPJMP*
-    (reg_address[8:1] == 8'h49) || (reg_address[8:1] == 8'h4A) || // DDFSTRT/STOP
-    (reg_address[8:1] >= 8'h47 && reg_address[8:1] <= 8'h4F) ||   // DIWSTRT/STOP, DMACON,
-                                                                   // CLXCON, INTENA/INTREQ, ADKCON
-    (reg_address[8:1] >= 8'h50 && reg_address[8:1] <= 8'h6D) ||   // AUD0-3 LCH/LCL/LEN/PER/VOL/DAT
-    (reg_address[8:1] >= 8'h90 && reg_address[8:1] <= 8'h9F) ||   // SPR*PTH/PTL
-    (reg_address[8:1] >= 8'hA0 && reg_address[8:1] <= 8'hBF) ||   // SPR*POS/CTL/DATA/DATB
-    (reg_address[8:1] == 8'hF2) ||                                // DIWHIGH (ECS/AGA)
-    (reg_address[8:1] == 8'hFE) ||                                // FMODE
-    (reg_address[8:1] >= 8'h20 && reg_address[8:1] <= 8'h2C);     // BLTCON0/1, BLTAFWM/ALWM,
-                                                                   // BLTCPTH/L, BLTBPTH/L,
-                                                                   // BLTAPTH/L, BLTDPTH/L, BLTSIZE
+    (reg_address[8:1] >= 8'h28 && reg_address[8:1] <= 8'h2C) ||   // BLTAPTH/L, BLTDPTH/L, BLTSIZE
+    (reg_address[8:1] == 8'h70) || (reg_address[8:1] == 8'h71);   // BPL1PTH/L
 
 wire trace_cpu_write = cpu_custom & (hwr | lwr);
 wire trace_cop_write = dma_cop;
