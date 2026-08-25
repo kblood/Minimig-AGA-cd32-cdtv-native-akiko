@@ -55,8 +55,10 @@ module sdram_ctrl
 	input             chipU,
 	input             chipRW,
 	input             chipDMA,
+	input             chip_dma_slot,
 	input      [15:0] chipWR,
 	output reg [15:0] chipRD,
+	output reg [15:0] chipRD_dma,
 	output     [47:0] chip48,
 	// cpu
 	input      [24:1] cpuAddr,
@@ -196,6 +198,8 @@ assign ramready = cache_rd_ack || write_ena;
 //// chip line read ////
 reg [15:0] chip48_1, chip48_2, chip48_3;
 
+reg slot_is_dma;
+
 always @ (posedge sysclk) begin
 	reg [15:0] sdata_chip;
 	reg [15:0] m;
@@ -207,12 +211,16 @@ always @ (posedge sysclk) begin
 		if(!fwd_dqm[0]) m[7:0]  = fwd_dat[7:0];
 	end
 	if(slot_type == CHIP) begin
-		case(sdram_state)
-			 9: chipRD   <= (fwd_en && fwd_pos==2'd0) ? m : sdata_chip;
-			11: chip48_1 <= (fwd_en && fwd_pos==2'd1) ? m : sdata_chip;
-			13: chip48_2 <= (fwd_en && fwd_pos==2'd2) ? m : sdata_chip;
-			15: chip48_3 <= (fwd_en && fwd_pos==2'd3) ? m : sdata_chip;
-		endcase
+		if(slot_is_dma) begin
+			if(sdram_state == 9) chipRD_dma <= (fwd_en && fwd_pos==2'd0) ? m : sdata_chip;
+		end else begin
+			case(sdram_state)
+				 9: chipRD   <= (fwd_en && fwd_pos==2'd0) ? m : sdata_chip;
+				11: chip48_1 <= (fwd_en && fwd_pos==2'd1) ? m : sdata_chip;
+				13: chip48_2 <= (fwd_en && fwd_pos==2'd2) ? m : sdata_chip;
+				15: chip48_3 <= (fwd_en && fwd_pos==2'd3) ? m : sdata_chip;
+			endcase
+		end
 	end
 end
 
@@ -323,6 +331,7 @@ always @ (posedge sysclk) begin
 				// (this includes anything on the "motherboard" - chip RAM, slow RAM and Kickstart, turbo modes notwithstanding)
 				if(~chipDMA | ~chipRW) begin
 					slot_type    <= CHIP;
+					slot_is_dma  <= chip_dma_slot;
 					{sd_ba,sd_addr,casaddr[8:0]} <= chipAddr;
 					sd_ras       <= 0;
 					cas_dqm      <= {chipU,chipL};

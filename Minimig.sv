@@ -144,7 +144,10 @@ wire        arb_chip_l;
 wire        arb_chip_u;
 wire        arb_chip_rw;
 wire        arb_chip_dma;
+wire        arb_chip_dma_slot;
 wire [15:0] arb_chip_wr;
+wire [15:0] chipRD_dma;
+wire        cpu_chip_slot_req;
 
 wire [35:0] EXT_BUS;
 hps_ext hps_ext(.*, .ide_req(ide_fast ? ide_f_req : ide_c_req),  .ide_din(ide_fast ? ide_f_readdata : ide_c_readdata));
@@ -460,7 +463,9 @@ sdram_ctrl ram1
 	.chipL        (arb_chip_l      ),
 	.chipRW       (arb_chip_rw     ),
 	.chipDMA      (arb_chip_dma    ),
+	.chip_dma_slot(arb_chip_dma_slot),
 	.chipRD       (ramdata_in      ),
+	.chipRD_dma   (chipRD_dma      ),
 	.chip48       (chip48          )
 );
 
@@ -499,6 +504,9 @@ chipdma_arb chipdma_arb
 	.chip_out_dma    (arb_chip_dma         ),
 	.chip_out_wr     (arb_chip_wr          ),
 	.chip_in_rd      (ramdata_in           ),
+	.chip_dma_slot   (arb_chip_dma_slot    ),
+	.chip_in_rd_dma  (chipRD_dma           ),
+	.cpu_chip_slot_req(cpu_chip_slot_req   ),
 
 	.z2ram_ena       (z2ram_ena            ),
 	.z3ram_base0     (z3ram_base0          ),
@@ -876,7 +884,9 @@ minimig minimig
 	.a2065_mem_writedata(a2065_mem_writedata),
 	.a2065_mem_byteenable(a2065_mem_byteenable),
 	.a2065_mem_write(a2065_mem_write),
-	.a2065_mem_waitrequest(a2065_mem_waitrequest)
+	.a2065_mem_waitrequest(a2065_mem_waitrequest),
+
+	.cpu_chip_slot_req(cpu_chip_slot_req)
 );
 
 // power led control

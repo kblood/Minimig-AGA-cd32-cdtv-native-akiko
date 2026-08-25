@@ -314,7 +314,9 @@ module minimig
 	output [63:0] a2065_mem_writedata,
 	output [7:0]  a2065_mem_byteenable,
 	output        a2065_mem_write,
-	input         a2065_mem_waitrequest
+	input         a2065_mem_waitrequest,
+
+	output        cpu_chip_slot_req
 );
 
 
@@ -465,6 +467,12 @@ wire        gayle_irq;			//interrupt request
 wire        gayle_nrdy;       // HDD fifo is not ready for reading
 
 wire	[7:0] bank;					//memory bank select
+
+wire cpu_chip_slot_req_c = ~dbr & ~_cpu_as & (|bank);
+reg  cpu_chip_slot_req_r;
+always @(posedge clk) cpu_chip_slot_req_r <= cck ? cpu_chip_slot_req_c
+                                                    : (cpu_chip_slot_req_r | cpu_chip_slot_req_c);
+assign cpu_chip_slot_req = cpu_chip_slot_req_r;
 
 // host interface
 wire        host_cs;
