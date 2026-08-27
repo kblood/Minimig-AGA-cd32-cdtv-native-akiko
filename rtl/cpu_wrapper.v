@@ -355,7 +355,7 @@ end
 // to a real A1200 68EC020 at 14 MHz. The cooldown is safe because the bus
 // controllers sit idle during it: clkena only rises once the current access has
 // completed, so no memory handshake is in flight while the CPU is held.
-wire stock_speed   = cachecfg[3];
+wire stock_speed   = 1'b1;	// DIAGNOSTIC: forced on, bypasses cachecfg[3]/userspace
 // The CDTV bridge fires cdtv_selack combinationally with sel, so its data is
 // available on the same cycle. It is the bridge's ready signal, the
 // counterpart of fastchip_ready alongside fastchip_selack, and has to release
@@ -366,7 +366,7 @@ reg [3:0] cooldown;
 always @(posedge clk) begin
 	if (~reset)                                cooldown <= 4'd0;
 	else if (cooldown != 4'd0)                 cooldown <= cooldown - 4'd1;
-	else if (stock_speed & clkena_p_base)      cooldown <= 4'd9;
+	else if (stock_speed & clkena_p_base)      cooldown <= 4'd4;
 end
 wire clkena_p_throttled = clkena_p_base & (cooldown == 4'd0);
 
